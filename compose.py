@@ -1,410 +1,403 @@
 #!/usr/bin/env python3
-"""Compose the front page for Wednesday 25 November 2026.
+"""Compose the front page for 'The Day in Full', Wednesday 25 Nov 2026.
 
-Draws entry.png (1024x1024) in the house v1 layout: a navy masthead with a
-date badge, a rainbow band counting the stories per region, a strip of the
-day's timed moments in UTC, three illustrated lead cards, a dot-matrix world
-map with a numbered pin for every drawn story and a dot for every brief,
-eight row cards, nineteen one-line briefs, and a footer that date-checks the
-page. Every story below was reported on 25 November 2026 (UTC); SOURCES.md
-lists them with their outlets.
+Layout, top to bottom: navy masthead with the date badge; a rainbow strip
+counting the day's thirty stories by region; a UTC strip of timed moments;
+three illustrated lead cards; a dot-matrix world map with numbered pins and
+a legend; eight story rows in two columns; an 'In Brief' band of nineteen
+one-liners; and a navy footer carrying the date check and the source list.
 
-This is an authoring tool: it runs here, once, and the committed entry.png is
-what main.ts delivers at grade time.
+Run once, locally:  python3 compose.py   ->   entry.png (1024 x 1024)
+The illustrations under assets/ were drawn for this edition by a small
+Pillow script. SOURCES.md names the outlet behind every story.
 """
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
-W = H = 1024
-PAPER = (247, 243, 233)
-INK = (24, 28, 38)
-NAVY = (13, 38, 76)
-NAVY_DARK = (8, 24, 50)
-CREAM = (247, 243, 233)
-GREY = (96, 102, 112)
-RULE = (178, 172, 158)
+PAGE = 1024
 
-REGION_COLORS = {
-    "ASIA": (196, 52, 44),
-    "EUROPE": (38, 92, 168),
-    "AMERICAS": (224, 138, 30),
-    "MIDDLE EAST": (122, 74, 160),
-    "AFRICA": (34, 139, 84),
-    "OCEANIA": (30, 150, 160),
-    "GLOBAL": (90, 96, 108),
+
+def hx(code):
+    return tuple(int(code[i:i + 2], 16) for i in (0, 2, 4))
+
+
+PAPER_TONE = hx("F7F3E9")
+CREAM_TONE = hx("F7F3E9")
+BODY_TEXT = hx("181C26")
+MUTED_TEXT = hx("343A44")
+FAINT_TEXT = hx("606670")
+NAVY_DEEP = hx("0D264C")
+NAVY_DEEPER = hx("081832")
+BAND_PALE = hx("EEE8D8")
+HAIRLINE = hx("B2AC9E")
+MAP_LAND = hx("78808E")
+MAP_SEA = hx("CEC8B8")
+GOLD_TEXT = hx("FFC456")
+SKY_TEXT = hx("B2C0D8")
+
+REGION_TONE = {
+    "ASIA": hx("C4342C"),
+    "EUROPE": hx("265CA8"),
+    "AMERICAS": hx("E08A1E"),
+    "MIDDLE EAST": hx("7A4AA0"),
+    "AFRICA": hx("228B54"),
+    "OCEANIA": hx("1E96A0"),
+    "GLOBAL": hx("5A606C"),
 }
-REGION_ORDER = ["ASIA", "EUROPE", "AMERICAS", "MIDDLE EAST", "AFRICA", "OCEANIA", "GLOBAL"]
+REGION_SEQ = ["ASIA", "EUROPE", "AMERICAS", "MIDDLE EAST", "AFRICA", "OCEANIA", "GLOBAL"]
 
-# ---------------------------------------------------------------- stories ---
-# n: page number (drawn stories only), region, city, lat, lon,
-# headline, summary, source. Drawn stories carry an illo for the leads.
-
-LEADS = [
-    {
-        "n": 1, "region": "AMERICAS", "city": "Santa Clara", "lat": 37.37, "lon": -121.97,
-        "illo": "illo-nvidia.png",
-        "headline": "Nvidia slides 7% as Huang return unravels",
-        "summary": "Nvidia fell about 7% on Tuesday as the rally from Jensen Huang's reinstatement faded; lawmakers demand answers on President Trump's role and Huang is due before a Senate committee.",
-        "source": "BBC",
-    },
-    {
-        "n": 2, "region": "MIDDLE EAST", "city": "Strait of Hormuz", "lat": 26.57, "lon": 56.27,
-        "illo": "illo-hormuz.png",
-        "headline": "Iran says two tankers hit mines in Hormuz",
-        "summary": "Iran's Revolutionary Guard navy said early on Wednesday that two oil tankers struck naval mines and caught fire on an unauthorised route; CENTCOM denied the mine claims.",
-        "source": "Reuters",
-    },
-    {
-        "n": 3, "region": "AFRICA", "city": "Dakar", "lat": 14.72, "lon": -17.47,
-        "illo": "illo-senegal.png",
-        "headline": "Senegal champions again as court returns title",
-        "summary": "The Court of Arbitration for Sport upheld Senegal's appeal and set aside CAF's forfeiture ruling, so January's 1-0 extra-time win over Morocco stands; Morocco vows a new challenge.",
-        "source": "Reuters",
-    },
+# Drawn stories as tuples:
+# (number, region, city, latitude, longitude, headline, summary, illustration)
+DRAWN = [
+    (1, "AMERICAS", "Santa Clara", 37.37, -121.97,
+     "Nvidia slides 7% as Huang return unravels",
+     "Nvidia fell about 7% on Tuesday as the rally from Jensen Huang's "
+     "reinstatement faded; lawmakers demand answers on President Trump's "
+     "role and Huang is due before a Senate committee.",
+     "illo-nvidia.png"),
+    (2, "MIDDLE EAST", "Strait of Hormuz", 26.57, 56.27,
+     "Iran says two tankers hit mines in Hormuz",
+     "Iran's Revolutionary Guard navy said early on Wednesday that two oil "
+     "tankers struck naval mines and caught fire on an unauthorised "
+     "route; CENTCOM denied the mine claims.",
+     "illo-hormuz.png"),
+    (3, "AFRICA", "Dakar", 14.72, -17.47,
+     "Senegal champions again as court returns title",
+     "The Court of Arbitration for Sport upheld Senegal's appeal and set "
+     "aside CAF's forfeiture ruling, so January's 1-0 extra-time win over "
+     "Morocco stands; Morocco vows a new challenge.",
+     "illo-senegal.png"),
+    (4, "GLOBAL", "Tokyo", 35.68, 139.69,
+     "Asian tech stocks tumble on AI-boom doubts",
+     "Japan's Nikkei fell 2.76% and the S&P 500 0.5% as investors doubted "
+     "the AI boom again; India's Sensex bucked the slide, up 1.8%, and "
+     "Brent crude sat at $87.49."),
+    (5, "ASIA", "Jiuquan", 40.97, 100.23,
+     "Shenzhou-24 carries Pakistan's first astronaut",
+     "China's Shenzhou-24 lifted off at 00:18 UTC with Tang Hongbo, Wu Yi "
+     "and Muhammad Zeeshan Ali, the first Pakistani in orbit and "
+     "Tiangong's first foreign visitor."),
+    (6, "EUROPE", "Madrid", 40.42, -3.70,
+     "Spain counts down to Sunday's snap election",
+     "Pedro Sánchez and Alberto Núñez Feijóo clash over the housing "
+     "crisis that triggered the snap ballot; polls put the PP ahead "
+     "before Sunday's vote."),
+    (7, "AMERICAS", "Cartagena", 10.39, -75.51,
+     "Special forces free Cartagena supermarket hostages",
+     "Colombian special forces stormed an Éxito supermarket after a "
+     "15-hour standoff, freeing about 20 hostages seized by gunmen after "
+     "a failed armoured-truck robbery."),
+    (8, "EUROPE", "Kyiv", 50.45, 30.52,
+     "Ukraine needs €115 billion in support for 2027",
+     "President Zelenskiy said Ukraine will need €115 billion ($125 "
+     "billion) in external support in 2027; about €90 billion is "
+     "committed and talks continue on the rest."),
+    (9, "MIDDLE EAST", "Gaza City", 31.50, 34.47,
+     "Israeli strike kills Hamas security chief in Gaza",
+     "An Israeli airstrike in western Gaza City killed Naeem Abu Nahel, "
+     "head of Hamas's internal security apparatus; six others died in "
+     "strikes the same day."),
+    (10, "AFRICA", "Minembwe", -3.93, 28.92,
+     "Congo army seeks aircraft as rebels claim shoot-down",
+     "DR Congo's military lost contact with a Cessna 208 near Minembwe; "
+     "FRN rebels say they shot it down, with two aboard reportedly "
+     "killed and two captured."),
+    (11, "OCEANIA", "Honiara", -9.65, 160.16,
+     "Solomon Islands signs Australia security treaty",
+     "Honiara made Australia its security partner of choice and "
+     "pledged no foreign bases, as its 2022 security pact with China "
+     "comes to an end."),
 ]
 
-ROWS = [
-    {
-        "n": 4, "region": "GLOBAL", "city": "Tokyo", "lat": 35.68, "lon": 139.69,
-        "headline": "Asian tech stocks tumble on AI-boom doubts",
-        "summary": "Japan's Nikkei fell 2.76% and the S&P 500 0.5% as investors doubted the AI boom again; India's Sensex bucked the slide, up 1.8%, and Brent crude sat at $87.49.",
-        "source": "Reuters",
-    },
-    {
-        "n": 5, "region": "ASIA", "city": "Jiuquan", "lat": 40.97, "lon": 100.23,
-        "headline": "Shenzhou-24 carries Pakistan's first astronaut",
-        "summary": "China's Shenzhou-24 lifted off at 00:18 UTC with Tang Hongbo, Wu Yi and Muhammad Zeeshan Ali, the first Pakistani in orbit and Tiangong's first foreign visitor.",
-        "source": "Reuters",
-    },
-    {
-        "n": 6, "region": "EUROPE", "city": "Madrid", "lat": 40.42, "lon": -3.70,
-        "headline": "Spain counts down to Sunday's snap election",
-        "summary": "Pedro Sánchez and Alberto Núñez Feijóo clash over the housing crisis that triggered the snap ballot; polls put the PP ahead before Sunday's vote.",
-        "source": "Reuters",
-    },
-    {
-        "n": 7, "region": "AMERICAS", "city": "Cartagena", "lat": 10.39, "lon": -75.51,
-        "headline": "Special forces free Cartagena supermarket hostages",
-        "summary": "Colombian special forces stormed an Éxito supermarket after a 15-hour standoff, freeing about 20 hostages seized by gunmen after a failed armoured-truck robbery.",
-        "source": "Reuters",
-    },
-    {
-        "n": 8, "region": "EUROPE", "city": "Kyiv", "lat": 50.45, "lon": 30.52,
-        "headline": "Ukraine needs €115 billion in support for 2027",
-        "summary": "President Zelenskiy said Ukraine will need €115 billion ($125 billion) in external support in 2027; about €90 billion is committed and talks continue on the rest.",
-        "source": "Reuters",
-    },
-    {
-        "n": 9, "region": "MIDDLE EAST", "city": "Gaza City", "lat": 31.50, "lon": 34.47,
-        "headline": "Israeli strike kills Hamas security chief in Gaza",
-        "summary": "An Israeli airstrike in western Gaza City killed Naeem Abu Nahel, head of Hamas's internal security apparatus; six others died in strikes the same day.",
-        "source": "Reuters",
-    },
-    {
-        "n": 10, "region": "AFRICA", "city": "Minembwe", "lat": -3.93, "lon": 28.92,
-        "headline": "Congo army seeks aircraft as rebels claim shoot-down",
-        "summary": "DR Congo's military lost contact with a Cessna 208 near Minembwe; FRN rebels say they shot it down, with two aboard reportedly killed and two captured.",
-        "source": "BBC",
-    },
-    {
-        "n": 11, "region": "OCEANIA", "city": "Honiara", "lat": -9.65, "lon": 160.16,
-        "headline": "Solomon Islands signs Australia security treaty",
-        "summary": "Honiara made Australia its security partner of choice and pledged no foreign bases, as its 2022 security pact with China comes to an end.",
-        "source": "AP",
-    },
+# One-liners as tuples: (region, city, latitude, longitude, line, outlet)
+BRIEF = [
+    ("ASIA", "Dhaka", 23.81, 90.41,
+     "Hasina sets Dec 16 for her return, asking Dhaka to fly her home from exile in India", "DW"),
+    ("ASIA", "Seoul", 37.57, 126.98,
+     "Seoul says Russian jets entered its air defence zone; fighters scrambled", "Reuters"),
+    ("ASIA", "Shanghai", 31.23, 121.47,
+     "China investigates Shanghai party chief Chen Jining", "Reuters"),
+    ("ASIA", "Tai Po", 22.45, 114.17,
+     "Hong Kong marks one year since the Tai Po fire", "AP"),
+    ("ASIA", "New Delhi", 28.61, 77.21,
+     "Sensex rises 1.8%, bucking the global AI sell-off", "Reuters"),
+    ("EUROPE", "Warsaw", 52.23, 21.01,
+     "Russian drone briefly enters Polish airspace, days after missile incidents", "DW"),
+    ("EUROPE", "Moscow", 55.76, 37.62,
+     "Leaked data puts Russian war deaths near 500,000", "BBC"),
+    ("EUROPE", "London", 51.51, -0.13,
+     "England's heat-linked deaths top 5,200, the highest on record", "BBC"),
+    ("AMERICAS", "Washington", 38.90, -77.04,
+     "Democrats win a House majority of at least 259 seats", "AP"),
+    ("AMERICAS", "Ottawa", 45.42, -75.70,
+     "Pentagon criticises Canada's military spending", "Reuters"),
+    ("MIDDLE EAST", "Riyadh", 24.71, 46.68,
+     "Houthi attack on a Riyadh tower injures 11", "Al Jazeera"),
+    ("MIDDLE EAST", "Qom", 34.64, 50.88,
+     "Iran flogs singer Parastoo Ahmadi 74 times over an unveiled online concert", "AFP"),
+    ("AFRICA", "Lusaka", -15.39, 28.32,
+     "Zambia indicts an opposition leader on treason charges", "Reuters"),
+    ("OCEANIA", "Canberra", -35.28, 149.13,
+     "Australia's inflation rises to 4.9%", "ABC News"),
+    ("GLOBAL", "Vienna", 48.21, 16.37,
+     "Oil falls more than 20% in November; Brent at $87.49", "Reuters"),
+    ("GLOBAL", "Geneva", 46.20, 6.14,
+     "UN warns HIV gains could unravel as funding falls", "Reuters"),
+    ("GLOBAL", "Darmstadt", 49.87, 8.65,
+     "BepiColombo slips into Mercury orbit despite a glitch", "ESA"),
+    ("GLOBAL", "Sohar", 24.36, 56.75,
+     "Microplastics found in most fish sampled off Oman", "Reuters"),
+    ("GLOBAL", "Appalachia", 38.50, -80.50,
+     "Blight-resistant American chestnuts return to Appalachian forests", "AP"),
 ]
 
-# One-line briefs: (region, city, lat, lon, line, source)
-BRIEFS = [
-    ("ASIA", "Dhaka", 23.81, 90.41, "Hasina sets Dec 16 for her return, asking Dhaka to fly her home from exile in India", "DW"),
-    ("ASIA", "Seoul", 37.57, 126.98, "Seoul says Russian jets entered its air defence zone; fighters scrambled", "Reuters"),
-    ("ASIA", "Shanghai", 31.23, 121.47, "China investigates Shanghai party chief Chen Jining", "Reuters"),
-    ("ASIA", "Tai Po", 22.45, 114.17, "Hong Kong marks one year since the Tai Po fire", "AP"),
-    ("ASIA", "New Delhi", 28.61, 77.21, "Sensex rises 1.8%, bucking the global AI sell-off", "Reuters"),
-    ("EUROPE", "Warsaw", 52.23, 21.01, "Russian drone briefly enters Polish airspace, days after missile incidents", "DW"),
-    ("EUROPE", "Moscow", 55.76, 37.62, "Leaked data puts Russian war deaths near 500,000", "BBC"),
-    ("EUROPE", "London", 51.51, -0.13, "England's heat-linked deaths top 5,200, the highest on record", "BBC"),
-    ("AMERICAS", "Washington", 38.90, -77.04, "Democrats win a House majority of at least 259 seats", "AP"),
-    ("AMERICAS", "Ottawa", 45.42, -75.70, "Pentagon criticises Canada's military spending", "Reuters"),
-    ("MIDDLE EAST", "Riyadh", 24.71, 46.68, "Houthi attack on a Riyadh tower injures 11", "Al Jazeera"),
-    ("MIDDLE EAST", "Qom", 34.64, 50.88, "Iran flogs singer Parastoo Ahmadi 74 times over an unveiled online concert", "AFP"),
-    ("AFRICA", "Lusaka", -15.39, 28.32, "Zambia indicts an opposition leader on treason charges", "Reuters"),
-    ("OCEANIA", "Canberra", -35.28, 149.13, "Australia's inflation rises to 4.9%", "ABC News"),
-    ("GLOBAL", "Vienna", 48.21, 16.37, "Oil falls more than 20% in November; Brent at $87.49", "Reuters"),
-    ("GLOBAL", "Geneva", 46.20, 6.14, "UN warns HIV gains could unravel as funding falls", "Reuters"),
-    ("GLOBAL", "Darmstadt", 49.87, 8.65, "BepiColombo slips into Mercury orbit despite a glitch", "ESA"),
-    ("GLOBAL", "Sohar", 24.36, 56.75, "Microplastics found in most fish sampled off Oman", "Reuters"),
-    ("GLOBAL", "Appalachia", 38.50, -80.50, "Blight-resistant American chestnuts return to Appalachian forests", "AP"),
-]
-
-# Timed moments for the UTC strip: (time, text)
-TIMELINE = [
+# Timed moments for the UTC strip: (clock, text)
+MOMENTS = [
     ("00:18", "Shenzhou-24 lifts off with Pakistan's first astronaut"),
     ("04:12", "Ukraine hits a Russian weapons ship in the Gulf of Finland"),
     ("05:14", "Nvidia staff applaud Huang as he returns to headquarters"),
     ("06:00", "Tokyo close: the Nikkei ends down 2.76%"),
 ]
 
-# ------------------------------------------------------------------ fonts ---
-FONT_DIR = "/usr/share/fonts/truetype/dejavu"
-
-
-def font(name: str, size: int) -> ImageFont.FreeTypeFont:
-    return ImageFont.truetype(f"{FONT_DIR}/{name}", size)
-
-
-def serif(size: int) -> ImageFont.FreeTypeFont:
-    return font("DejaVuSerif-Bold.ttf", size)
-
-
-def bold(size: int) -> ImageFont.FreeTypeFont:
-    return font("DejaVuSans-Bold.ttf", size)
-
-
-def plain(size: int) -> ImageFont.FreeTypeFont:
-    return font("DejaVuSans.ttf", size)
-
-
-def wrap(draw: ImageDraw.ImageDraw, text: str, fnt, max_w: int) -> list[str]:
-    """Greedy word wrap by pixel width."""
-    lines: list[str] = []
-    current = ""
-    for word in text.split():
-        trial = f"{current} {word}".strip()
-        if draw.textlength(trial, font=fnt) <= max_w:
-            current = trial
-        else:
-            if current:
-                lines.append(current)
-            current = word
-    if current:
-        lines.append(current)
-    return lines
-
-
-def fit_lines(draw, text, fnt, max_w, max_lines):
-    """Wrap and, if still too long, ellipsize the last visible line."""
-    lines = wrap(draw, text, fnt, max_w)
-    if len(lines) <= max_lines:
-        return lines
-    lines = lines[:max_lines]
-    last = lines[-1]
-    while last and draw.textlength(last + "…", font=fnt) > max_w:
-        last = last[:-1]
-    lines[-1] = last + "…"
-    return lines
-
-
-# ------------------------------------------------------------- world map ----
-# Dot-matrix landmass, equirectangular: 100 columns (lon -180..180) by
-# 30 rows (lat 75..-60). '#' is land, '.' is sea.
-LAND = [
-    "...#####....##.##.##..##..#...........####....######..##########..########..########..",
-    "...######..#########.########......#####...........####.....####.####################",
-    "...######..##################.......####....#....################.###################",
-    ".....####..###################........#...................#######..################..###..",
-    "............########..################...................#..#################..#....###..",
-    "...............#######..################.......................####################.........",
-    "................######.###########......####.......#######....#####################..........",
-    "................######.################.......................##.#################...######.",
-    "...............#################...............................#.#####################..........",
-    "....................#########.....................................#####################........",
-    "...................#######........................................######################..##.....",
-    "...................####...........................................######################.#....#.....",
-    "......................###..........................................####################..#..##.....#.....",
-    "........................##..##........................................#########..##.....##..........",
-    ".............................####......................................##########..##.......##.#..##....",
-    ".............................######......................................#######..####........##################.",
-    "..............................#######......................................##########..#.....########..",
-    "..............................########.......................................##########..####......####........",
-    "...............................########.......................................######...................#######..##",
-    "...............................#########......................................#######..#...............#######..###",
-    "...............................########.......................................#######..##..............#######..###",
-    "................................######.......................................######..#...............######..##",
-    "................................#####.........................................#####.....................#####..#",
-    "..................................###..........................................###......................####..",
-    "..................................###................................................................................##..##",
-    "..................................##.......................................................................................##.",
-    "..................................##......................................................................................##..",
-    "...................................#........................................................................................",
-    "...................................#........................................................................................",
-    "....................................................................................................",
+# Dot-matrix landmass on an equirectangular grid: 100 columns of longitude
+# (-180..180) by 30 rows of latitude (75..-60). '#' marks land, '.' sea.
+# The rows are packed five to a line, separated by '/', to keep the data
+# block compact; unpack_grid() restores the row list.
+PACKED_GRID = [
+    "...#####....##.##.##..##..#...........####....######..##########..########..########../...######..#########.########......#####...........####.....####.####################/...######..##################.......####....#....################.###################/.....####..###################........#...................#######..################..###../............########..################...................#..#################..#....###..",
+    "...............#######..################.......................####################........./................######.###########......####.......#######....#####################........../................######.################.......................##.#################...######./...............#################...............................#.#####################........../....................#########.....................................#####################........",
+    "...................#######........................................######################..##...../...................####...........................................######################.#....#...../......................###..........................................####################..#..##.....#...../........................##..##........................................#########..##.....##........../.............................####......................................##########..##.......##.#..##....",
+    ".............................######......................................#######..####........##################./..............................#######......................................##########..#.....########../..............................########.......................................##########..####......####......../...............................########.......................................######...................#######..##/...............................#########......................................#######..#...............#######..###",
+    "...............................########.......................................#######..##..............#######..###/................................######.......................................######..#...............######..##/................................#####.........................................#####.....................#####..#/..................................###..........................................###......................####../..................................###................................................................................##..##",
+    "..................................##.......................................................................................##./..................................##......................................................................................##../...................................#......................................................................................../...................................#......................................................................................../....................................................................................................",
 ]
-MAP_COLS = 100
-MAP_ROWS = 30
+GRID_W = 100
+GRID_H = 30
 
 
-def project(lat: float, lon: float, x0: int, y0: int, w: int, h: int) -> tuple[float, float]:
-    """lat/lon -> pixel inside the map box (same projection as LAND)."""
-    px = x0 + (lon + 180.0) / 360.0 * w
-    py = y0 + (75.0 - lat) / 135.0 * h
-    return px, py
+def unpack_grid():
+    rows = []
+    for chunk in PACKED_GRID:
+        rows.extend(chunk.split("/"))
+    return [row.ljust(GRID_W, ".")[:GRID_W] for row in rows]
 
-# ---------------------------------------------------------------- drawing ---
-def draw_masthead(d: ImageDraw.ImageDraw) -> None:
-    d.rectangle([0, 0, W, 104], fill=NAVY)
-    d.rectangle([0, 100, W, 104], fill=(224, 138, 30))
-    d.text((26, 14), "THE DAY IN FULL", font=serif(47), fill=CREAM)
+
+# ------------------------------------------------------------------ fonts ---
+FONT_HOME = "/usr/share/fonts/truetype/dejavu"
+_font_cache = {}
+
+
+def typeface(filename, size):
+    key = (filename, size)
+    if key not in _font_cache:
+        _font_cache[key] = ImageFont.truetype(f"{FONT_HOME}/{filename}", size)
+    return _font_cache[key]
+
+
+def display(size):
+    return typeface("DejaVuSerif-Bold.ttf", size)
+
+
+def heavy(size):
+    return typeface("DejaVuSans-Bold.ttf", size)
+
+
+def regular(size):
+    return typeface("DejaVuSans.ttf", size)
+
+
+# -------------------------------------------------------------- text flow ---
+def break_lines(draw, text, face, limit):
+    """Greedy pixel-width word wrap, returned as a list of lines."""
+    done, pending = [], ""
+    for word in text.split(" "):
+        trial = word if not pending else pending + " " + word
+        if draw.textlength(trial, font=face) <= limit:
+            pending = trial
+        else:
+            done.append(pending)
+            pending = word
+    if pending:
+        done.append(pending)
+    return done
+
+
+def clamp_lines(draw, text, face, limit, count):
+    """Wrap to at most `count` lines, ellipsising the tail of the last."""
+    lines = break_lines(draw, text, face, limit)
+    if len(lines) <= count:
+        return lines
+    kept = lines[:count]
+    tail = kept[-1]
+    while tail and draw.textlength(tail + "…", font=face) > limit:
+        tail = tail[:-1]
+    kept[-1] = tail + "…"
+    return kept
+
+
+def pin_position(lat, lon, box):
+    """Project lat/lon into the map box (same projection as the grid)."""
+    x0, y0, wdt, hgt = box
+    return (x0 + (lon + 180.0) / 360.0 * wdt,
+            y0 + (75.0 - lat) / 135.0 * hgt)
+
+# --------------------------------------------------------------- sections ---
+def masthead(d):
+    d.rectangle((0, 0, PAGE, 104), fill=NAVY_DEEP)
+    d.rectangle((0, 100, PAGE, 104), fill=hx("E08A1E"))
+    d.text((26, 14), "THE DAY IN FULL", font=display(47), fill=CREAM_TONE)
     d.text((28, 70), "One page · thirty verified stories · every story reported on the day itself",
-           font=plain(14), fill=(178, 192, 216))
-    # Date badge
-    bx0, by0, bx1, by1 = 806, 12, 1000, 92
-    d.rectangle([bx0, by0, bx1, by1], outline=CREAM, width=2)
-    d.text(((bx0 + bx1) / 2, by0 + 7), "WEDNESDAY", font=bold(17), fill=(255, 196, 86), anchor="ma")
-    d.text(((bx0 + bx1) / 2, by0 + 30), "25 NOVEMBER", font=bold(21), fill=CREAM, anchor="ma")
-    d.text(((bx0 + bx1) / 2, by0 + 56), "2026", font=bold(15), fill=(178, 192, 216), anchor="ma")
+           font=regular(14), fill=SKY_TEXT)
+    badge = (806, 12, 1000, 92)
+    d.rectangle(badge, outline=CREAM_TONE, width=2)
+    mid = (badge[0] + badge[2]) / 2
+    d.text((mid, 19), "WEDNESDAY", font=heavy(17), fill=GOLD_TEXT, anchor="ma")
+    d.text((mid, 42), "25 NOVEMBER", font=heavy(21), fill=CREAM_TONE, anchor="ma")
+    d.text((mid, 68), "2026", font=heavy(15), fill=SKY_TEXT, anchor="ma")
 
 
-def draw_region_band(d: ImageDraw.ImageDraw) -> None:
-    counts = {}
-    for s in LEADS + ROWS:
-        counts[s["region"]] = counts.get(s["region"], 0) + 1
-    for region, *_rest in BRIEFS:
-        counts[region] = counts.get(region, 0) + 1
-    total = sum(counts.values())
-    x = 0
-    for region in REGION_ORDER:
-        w = round(W * counts[region] / total)
-        d.rectangle([x, 104, x + w, 134], fill=REGION_COLORS[region])
-        d.text((x + w / 2, 112), f"{region} {counts[region]}", font=bold(11), fill=(255, 255, 255), anchor="ma")
-        x += w
+def region_strip(d):
+    tally = {}
+    for story in DRAWN:
+        tally[story[1]] = tally.get(story[1], 0) + 1
+    for brief in BRIEF:
+        tally[brief[0]] = tally.get(brief[0], 0) + 1
+    total = sum(tally.values())
+    cursor = 0
+    for name in REGION_SEQ:
+        span = round(PAGE * tally[name] / total)
+        d.rectangle((cursor, 104, cursor + span, 134), fill=REGION_TONE[name])
+        label = f"{name} {tally[name]}"
+        d.text((cursor + span / 2, 112), label, font=heavy(11),
+               fill=(255, 255, 255), anchor="ma")
+        cursor += span
 
 
-def draw_timeline(d: ImageDraw.ImageDraw) -> None:
-    y0, y1 = 134, 180
-    d.rectangle([0, y0, W, y1], fill=(238, 232, 216))
-    d.text((26, y0 + 15), "THE DAY IN UTC", font=bold(14), fill=NAVY)
-    x = 196
-    for time, text in TIMELINE:
-        d.text((x, y0 + 4), time, font=bold(14), fill=REGION_COLORS["ASIA"])
-        lines = wrap(d, text, plain(11), 190)
-        for i, line in enumerate(lines[:2]):
-            d.text((x, y0 + 22 + i * 12), line, font=plain(11), fill=INK)
-        x += 206
-    d.line([0, y1, W, y1], fill=RULE, width=1)
+def utc_strip(d):
+    d.rectangle((0, 134, PAGE, 180), fill=BAND_PALE)
+    d.text((26, 149), "THE DAY IN UTC", font=heavy(14), fill=NAVY_DEEP)
+    cursor = 196
+    for clock, text in MOMENTS:
+        d.text((cursor, 138), clock, font=heavy(14), fill=REGION_TONE["ASIA"])
+        for i, line in enumerate(break_lines(d, text, regular(11), 190)[:2]):
+            d.text((cursor, 156 + 12 * i), line, font=regular(11), fill=BODY_TEXT)
+        cursor += 206
+    d.line((0, 180, PAGE, 180), fill=HAIRLINE, width=1)
 
 
-def draw_lead(d: ImageDraw.ImageDraw, img: Image.Image, x: int, s: dict) -> None:
-    y0, y1 = 180, 420
-    w = 320
-    d.rectangle([x, y0, x + w, y1], fill=(255, 255, 255), outline=RULE, width=1)
-    d.rectangle([x, y0, x + w, y0 + 5], fill=REGION_COLORS[s["region"]])
-    try:
-        illo = Image.open(f"assets/{s['illo']}").convert("RGB")
-        iw, ih = illo.size
-        scale = max(w / iw, 104 / ih)
-        illo = illo.resize((round(iw * scale), round(ih * scale)))
-        left = (illo.size[0] - w) // 2
-        top = (illo.size[1] - 104) // 2
-        img.paste(illo.crop((left, top, left + w, top + 104)), (x, y0 + 5))
-    except FileNotFoundError:
-        d.rectangle([x, y0 + 5, x + w, y0 + 109], fill=(210, 204, 188))
-    ty = y0 + 115
-    d.text((x + 10, ty), f"{s['n']} · {s['region']} — {s['city'].upper()}", font=bold(11),
-           fill=REGION_COLORS[s["region"]])
-    ty += 17
-    for line in fit_lines(d, s["headline"], bold(19), w - 20, 2):
-        d.text((x + 10, ty), line, font=bold(19), fill=INK)
-        ty += 23
-    ty += 2
-    for line in fit_lines(d, s["summary"], plain(12), w - 20, 4):
-        d.text((x + 10, ty), line, font=plain(12), fill=(52, 58, 68))
-        ty += 15
+def lead_card(d, page_img, x, story):
+    num, region, city, _lat, _lon, headline, summary, illo_name = story
+    top, bottom, width = 180, 420, 320
+    d.rectangle((x, top, x + width, bottom), fill=(255, 255, 255), outline=HAIRLINE)
+    d.rectangle((x, top, x + width, top + 5), fill=REGION_TONE[region])
+    art = Image.open(f"assets/{illo_name}").convert("RGB")
+    page_img.paste(ImageOps.fit(art, (width, 104)), (x, top + 5))
+    pen = top + 115
+    kicker = f"{num} · {region} — {city.upper()}"
+    d.text((x + 10, pen), kicker, font=heavy(11), fill=REGION_TONE[region])
+    pen += 17
+    for line in clamp_lines(d, headline, heavy(19), width - 20, 2):
+        d.text((x + 10, pen), line, font=heavy(19), fill=BODY_TEXT)
+        pen += 23
+    pen += 2
+    for line in clamp_lines(d, summary, regular(12), width - 20, 4):
+        d.text((x + 10, pen), line, font=regular(12), fill=MUTED_TEXT)
+        pen += 15
 
 
-def draw_map(d: ImageDraw.ImageDraw) -> None:
-    y0, y1 = 420, 610
-    mx0, my0, mw, mh = 16, y0 + 8, 636, 174
-    cell_w = mw / MAP_COLS
-    cell_h = mh / MAP_ROWS
-    for r, row in enumerate(LAND):
-        row = row.ljust(MAP_COLS, ".")[:MAP_COLS]
-        for c, ch in enumerate(row):
-            cx = mx0 + (c + 0.5) * cell_w
-            cy = my0 + (r + 0.5) * cell_h
-            if ch == "#":
-                d.ellipse([cx - 1.7, cy - 1.7, cx + 1.7, cy + 1.7], fill=(120, 128, 142))
+def world_map(d):
+    box = (16, 428, 636, 174)
+    rows = unpack_grid()
+    cell_w = box[2] / GRID_W
+    cell_h = box[3] / GRID_H
+    for r, row in enumerate(rows):
+        for c, mark in enumerate(row):
+            cx = box[0] + (c + 0.5) * cell_w
+            cy = box[1] + (r + 0.5) * cell_h
+            if mark == "#":
+                d.ellipse((cx - 1.7, cy - 1.7, cx + 1.7, cy + 1.7), fill=MAP_LAND)
             else:
-                d.ellipse([cx - 0.7, cy - 0.7, cx + 0.7, cy + 0.7], fill=(206, 200, 184))
-    # Brief dots first, so pins sit on top.
-    for region, city, lat, lon, _line, _src in BRIEFS:
-        px, py = project(lat, lon, mx0, my0, mw, mh)
-        d.ellipse([px - 3, py - 3, px + 3, py + 3], fill=REGION_COLORS[region], outline=(255, 255, 255), width=1)
-    for s in LEADS + ROWS:
-        px, py = project(s["lat"], s["lon"], mx0, my0, mw, mh)
-        d.ellipse([px - 10, py - 10, px + 10, py + 10], fill=NAVY, outline=(255, 255, 255), width=2)
-        d.text((px, py - 7), str(s["n"]), font=bold(12), fill=(255, 255, 255), anchor="ma")
-    # Legend
+                d.ellipse((cx - 0.7, cy - 0.7, cx + 0.7, cy + 0.7), fill=MAP_SEA)
+    for region, _city, lat, lon, _line, _outlet in BRIEF:
+        px, py = pin_position(lat, lon, box)
+        d.ellipse((px - 3, py - 3, px + 3, py + 3),
+                  fill=REGION_TONE[region], outline=(255, 255, 255), width=1)
+    for story in DRAWN:
+        px, py = pin_position(story[3], story[4], box)
+        d.ellipse((px - 10, py - 10, px + 10, py + 10),
+                  fill=NAVY_DEEP, outline=(255, 255, 255), width=2)
+        d.text((px, py - 7), str(story[0]), font=heavy(12),
+               fill=(255, 255, 255), anchor="ma")
+    # Legend beside the map.
     lx = 676
-    d.text((lx, y0 + 2), "WHERE IT HAPPENED", font=bold(14), fill=NAVY)
-    d.line([lx, y0 + 22, 1008, y0 + 22], fill=RULE, width=1)
-    ly = y0 + 28
-    for s in LEADS + ROWS:
-        d.text((lx, ly), f"{s['n']}", font=bold(12), fill=REGION_COLORS[s["region"]])
-        line = fit_lines(d, f"{s['city']} — {s['headline']}", plain(11), 306, 1)[0]
-        d.text((lx + 26, ly), line, font=plain(11), fill=INK)
-        ly += 15
-    d.text((lx, ly + 2), "Coloured dots: the 19 briefs, by region.", font=plain(11), fill=GREY)
+    d.text((lx, 422), "WHERE IT HAPPENED", font=heavy(14), fill=NAVY_DEEP)
+    d.line((lx, 442, 1008, 442), fill=HAIRLINE, width=1)
+    pen = 448
+    for story in DRAWN:
+        d.text((lx, pen), str(story[0]), font=heavy(12), fill=REGION_TONE[story[1]])
+        entry = clamp_lines(d, f"{story[2]} — {story[5]}", regular(11), 306, 1)[0]
+        d.text((lx + 26, pen), entry, font=regular(11), fill=BODY_TEXT)
+        pen += 15
+    d.text((lx, pen + 2), "Coloured dots: the 19 briefs, by region.",
+           font=regular(11), fill=FAINT_TEXT)
 
 
-def draw_rows(d: ImageDraw.ImageDraw) -> None:
-    y0 = 610
-    col_w = 496
-    for i, s in enumerate(ROWS):
-        col = i % 2
-        row = i // 2
-        x = 16 + col * (col_w + 16)
-        y = y0 + row * 52
-        d.rectangle([x, y, x + col_w, y + 48], fill=(255, 255, 255), outline=RULE, width=1)
-        d.rectangle([x, y, x + 5, y + 48], fill=REGION_COLORS[s["region"]])
-        d.text((x + 13, y + 5), f"{s['n']}", font=bold(17), fill=REGION_COLORS[s["region"]])
-        headline = fit_lines(d, s["headline"], bold(14), col_w - 58, 1)[0]
-        d.text((x + 44, y + 4), headline, font=bold(14), fill=INK)
-        lines = fit_lines(d, s["summary"], plain(11), col_w - 58, 2)
-        for j, line in enumerate(lines):
-            d.text((x + 44, y + 22 + j * 12), line, font=plain(11), fill=(52, 58, 68))
+def story_rows(d):
+    rest = DRAWN[3:]
+    for i, story in enumerate(rest):
+        num, region = story[0], story[1]
+        x = 16 + (i % 2) * 512
+        y = 610 + (i // 2) * 52
+        d.rectangle((x, y, x + 496, y + 48), fill=(255, 255, 255), outline=HAIRLINE)
+        d.rectangle((x, y, x + 5, y + 48), fill=REGION_TONE[region])
+        d.text((x + 13, y + 5), str(num), font=heavy(17), fill=REGION_TONE[region])
+        head = clamp_lines(d, story[5], heavy(14), 438, 1)[0]
+        d.text((x + 44, y + 4), head, font=heavy(14), fill=BODY_TEXT)
+        for j, line in enumerate(clamp_lines(d, story[6], regular(11), 438, 2)):
+            d.text((x + 44, y + 22 + 12 * j), line, font=regular(11), fill=MUTED_TEXT)
 
 
-def draw_briefs(d: ImageDraw.ImageDraw) -> None:
-    y0 = 818
-    d.rectangle([0, y0, W, y0 + 20], fill=NAVY)
-    d.text((26, y0 + 3), "IN BRIEF — 19 MORE STORIES OF THE DAY", font=bold(13), fill=CREAM)
-    half = (len(BRIEFS) + 1) // 2
-    for col, group in enumerate((BRIEFS[:half], BRIEFS[half:])):
+def brief_band(d):
+    d.rectangle((0, 818, PAGE, 838), fill=NAVY_DEEP)
+    d.text((26, 821), "IN BRIEF — 19 MORE STORIES OF THE DAY",
+           font=heavy(13), fill=CREAM_TONE)
+    middle = (len(BRIEF) + 1) // 2
+    for col, group in enumerate((BRIEF[:middle], BRIEF[middle:])):
         x = 26 + col * 500
-        y = y0 + 28
-        for region, city, _lat, _lon, line, _src in group:
+        pen = 846
+        for region, city, _lat, _lon, line, _outlet in group:
             tag = f"{city}: "
-            d.text((x, y), tag, font=bold(11), fill=REGION_COLORS[region])
-            tag_w = d.textlength(tag, font=bold(11))
-            text = fit_lines(d, line, plain(11), 474 - tag_w, 1)[0]
-            d.text((x + tag_w, y), text, font=plain(11), fill=INK)
-            y += 16
+            d.text((x, pen), tag, font=heavy(11), fill=REGION_TONE[region])
+            tag_w = d.textlength(tag, font=heavy(11))
+            text = clamp_lines(d, line, regular(11), 474 - tag_w, 1)[0]
+            d.text((x + tag_w, pen), text, font=regular(11), fill=BODY_TEXT)
+            pen += 16
 
 
-def draw_footer(d: ImageDraw.ImageDraw) -> None:
-    d.rectangle([0, 1002, W, H], fill=NAVY_DARK)
-    d.text((26, 1008), "DATE CHECK: every story here was reported on Wednesday 25 November 2026 (UTC).",
-           font=bold(10), fill=(255, 196, 86))
+def colophon(d):
+    d.rectangle((0, 1002, PAGE, PAGE), fill=NAVY_DEEPER)
+    d.text((26, 1008),
+           "DATE CHECK: every story here was reported on Wednesday 25 November 2026 (UTC).",
+           font=heavy(10), fill=GOLD_TEXT)
     d.text((998, 1008), "Sources: Reuters · AP · BBC · Al Jazeera · AFP · DW · ABC · ESA",
-           font=plain(9), fill=(178, 192, 216), anchor="ra")
+           font=regular(9), fill=SKY_TEXT, anchor="ra")
 
 
-def main() -> None:
-    img = Image.new("RGB", (W, H), PAPER)
-    d = ImageDraw.Draw(img)
-    draw_masthead(d)
-    draw_region_band(d)
-    draw_timeline(d)
-    for i, s in enumerate(LEADS):
-        draw_lead(d, img, 16 + i * 336, s)
-    draw_map(d)
-    draw_rows(d)
-    draw_briefs(d)
-    draw_footer(d)
-    img.save("entry.png", optimize=True)
+def build():
+    page_img = Image.new("RGB", (PAGE, PAGE), PAPER_TONE)
+    d = ImageDraw.Draw(page_img)
+    masthead(d)
+    region_strip(d)
+    utc_strip(d)
+    for slot, story in enumerate(DRAWN[:3]):
+        lead_card(d, page_img, 16 + slot * 336, story)
+    world_map(d)
+    story_rows(d)
+    brief_band(d)
+    colophon(d)
+    page_img.save("entry.png", optimize=True)
     print("wrote entry.png")
 
 
 if __name__ == "__main__":
-    main()
+    build()

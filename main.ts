@@ -1,88 +1,86 @@
-// The Day in Full — Wednesday 25 November 2026.
-// Entry for make.fun bounty news-image-20261125.
+// "The Day in Full" — the Wednesday 25 November 2026 front page.
+// make.fun bounty: news-image-20261125.
 //
-// The picture itself is committed beside this file as entry.png: a single
-// 1024x1024 front page composed from the day's verified stories (see
-// SOURCES.md for the story list and compose.py for how the page is drawn).
-// This program's whole job at grade time is to deliver that picture to the
-// output folder, after checking it still obeys the contest's caps.
+// The finished page travels with this entry as entry.png (1024 x 1024,
+// drawn locally by compose.py from the day's verified stories; SOURCES.md
+// lists them). At grade time there is no network and nothing to redraw:
+// this program validates the committed page against the contest limits
+// and delivers it into the output folder, proving the delivery intact.
 
-import { copyFileSync, mkdirSync, readFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const MAX_BYTES = 1_048_576; // 1 MiB
-const MAX_SIDE = 1024; // pixels, either dimension
+const BYTE_LIMIT = 1024 * 1024; // the contest's 1 MiB ceiling
+const SIDE_LIMIT = 1024; // the contest's pixel ceiling, either way
 
-function fail(message: string): never {
-  console.error(`entry: ${message}`);
+function die(reason: string): never {
+  console.error(`the day in full: ${reason}`);
   process.exit(1);
 }
 
-function pngSize(bytes: Buffer): { width: number; height: number } {
-  // A PNG opens with an 8-byte signature; the IHDR chunk follows and its
-  // first eight data bytes are the width and the height, big-endian.
-  const signature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
-  if (bytes.length < 24) fail('entry.png is too small to be a PNG');
-  for (let i = 0; i < signature.length; i++) {
-    if (bytes[i] !== signature[i]) fail('entry.png does not start with the PNG signature');
-  }
-  if (bytes.toString('ascii', 12, 16) !== 'IHDR') fail('entry.png has no IHDR chunk');
-  return { width: bytes.readUInt32BE(16), height: bytes.readUInt32BE(20) };
+// The page is a PNG: eight signature bytes, then the IHDR chunk, whose
+// payload opens with the canvas width and height as big-endian uint32s.
+function pngCanvas(bytes: Buffer): [number, number] {
+  const magic = [137, 80, 78, 71, 13, 10, 26, 10];
+  const signed = bytes.length >= 24 && magic.every((b, i) => bytes[i] === b);
+  if (!signed) die('entry.png fails the PNG signature check');
+  if (bytes.toString('latin1', 12, 16) !== 'IHDR') die('entry.png carries no IHDR chunk');
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return [view.getUint32(16), view.getUint32(20)];
 }
 
-function jpegSize(bytes: Buffer): { width: number; height: number } {
-  // The contest also accepts JPEG. A JPEG opens with SOI (FF D8) and then a
-  // chain of marker segments; the start-of-frame segment (C0 or C2) carries
-  // the height and width, big-endian, after its length and precision bytes.
+// The rules also allow a JPEG page. JPEGs open with the SOI marker (FF D8)
+// and continue as marker segments, each sized by a big-endian uint16; the
+// start-of-frame segment (C0 or C2) holds the height, then the width.
+function jpegCanvas(bytes: Buffer): [number, number] {
   if (bytes.length < 4 || bytes[0] !== 0xff || bytes[1] !== 0xd8) {
-    fail('entry.png is neither a PNG nor a JPEG');
+    die('entry.png is neither PNG nor JPEG');
   }
-  let offset = 2;
-  while (offset + 9 < bytes.length) {
-    if (bytes[offset] !== 0xff) fail('entry.png has a corrupt JPEG segment');
-    const marker = bytes[offset + 1];
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  let at = 2;
+  while (at + 9 < bytes.length) {
+    if (bytes[at] !== 0xff) die('entry.png has a broken JPEG segment');
+    const marker = bytes[at + 1];
     if (marker === 0xc0 || marker === 0xc2) {
-      return { height: bytes.readUInt16BE(offset + 5), width: bytes.readUInt16BE(offset + 7) };
+      return [view.getUint16(at + 7), view.getUint16(at + 5)];
     }
-    offset += 2 + bytes.readUInt16BE(offset + 2);
+    at += 2 + view.getUint16(at + 2);
   }
-  fail('entry.png has no JPEG start-of-frame segment');
+  die('entry.png shows no JPEG start-of-frame segment');
 }
 
-function pictureSize(bytes: Buffer): { width: number; height: number } {
-  return bytes[0] === 0x89 ? pngSize(bytes) : jpegSize(bytes);
+function canvasSize(bytes: Buffer): [number, number] {
+  return bytes[0] === 0x89 ? pngCanvas(bytes) : jpegCanvas(bytes);
 }
 
-function main(): void {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const picturePath = join(here, 'entry.png');
-  const picture = readFileSync(picturePath);
+const folder = dirname(fileURLToPath(import.meta.url));
+const pagePath = join(folder, 'entry.png');
+const page = readFileSync(pagePath);
 
-  if (picture.length > MAX_BYTES) {
-    fail(`entry.png is ${picture.length} bytes, over the ${MAX_BYTES} byte cap`);
-  }
-  if (picture.length === 0) fail('entry.png is empty');
-  const { width, height } = pictureSize(picture);
-  if (width > MAX_SIDE || height > MAX_SIDE) {
-    fail(`entry.png is ${width}x${height}, over the ${MAX_SIDE} pixel cap`);
-  }
-
-  const outDir = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
-  mkdirSync(outDir, { recursive: true });
-  const target = join(outDir, 'entry.png');
-  copyFileSync(picturePath, target);
-  // Read the delivered file back and compare it byte for byte with the
-  // committed picture, so a truncated copy can never pass silently; then
-  // re-parse the delivered copy's header as a second, independent check.
-  const delivered = readFileSync(target);
-  if (!delivered.equals(picture)) fail('the delivered copy differs from entry.png');
-  const deliveredSize = pictureSize(delivered);
-  if (deliveredSize.width !== width || deliveredSize.height !== height) {
-    fail('the delivered copy parses to different dimensions');
-  }
-  const kib = (picture.length / 1024).toFixed(1);
-  console.log(`entry: wrote ${target} (${width}x${height}, ${picture.length} bytes = ${kib} KiB, verified)`);
+if (page.byteLength === 0) die('entry.png is empty');
+if (page.byteLength > BYTE_LIMIT) {
+  die(`entry.png weighs ${page.byteLength} bytes; the limit is ${BYTE_LIMIT}`);
+}
+const [canvasW, canvasH] = canvasSize(page);
+if (canvasW > SIDE_LIMIT || canvasH > SIDE_LIMIT) {
+  die(`entry.png spans ${canvasW}x${canvasH}; the limit is ${SIDE_LIMIT} a side`);
 }
 
-main();
+const outFolder = process.env.MAKEFUN_OUTPUT_DIR ?? '/output';
+mkdirSync(outFolder, { recursive: true });
+const deliveredPath = join(outFolder, 'entry.png');
+copyFileSync(pagePath, deliveredPath);
+
+const delivered = readFileSync(deliveredPath);
+if (statSync(deliveredPath).size !== page.byteLength || !delivered.equals(page)) {
+  die('the delivered page does not match the committed entry.png');
+}
+// Independent second look: parse the delivered copy's own header and make
+// sure it still describes the same canvas as the committed page.
+const [againW, againH] = canvasSize(delivered);
+if (againW !== canvasW || againH !== canvasH) {
+  die('the delivered page parses to a different canvas size');
+}
+const kib = (page.byteLength / 1024).toFixed(1);
+console.log(`the day in full: delivered ${deliveredPath} — ${canvasW}x${canvasH}, ${page.byteLength} bytes (${kib} KiB), intact`);
